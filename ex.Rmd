@@ -99,3 +99,96 @@ cvsl_fit_ex2 <- CV.SuperLearner(Y = d$Y, X = d[, -1], SL.library = library_ex2,
 summary(cvsl_fit_ex2)
 ```
 
+### EXAMPLE 3: Poor cross-validation specification
+
+```{r}
+set.seed(924)
+sl_fit_ex3 <- SuperLearner(Y = d$Y, X = d[, -1], SL.library = library_ex1,
+                           cvControl = list(V = 2))
+sl_fit_ex3
+set.seed(924)
+cvsl_fit_ex3 <- CV.SuperLearner(Y = d$Y, X = d[,-1], SL.library = library_ex1,
+                                cvControl = list(V = 2),
+                                innerCvControl = list(list(V = 2)))
+summary(cvsl_fit_ex3)
+```
+
+### EXAMPLE 4: Super learner (SL) specification for rare binary outcome based on guidelines
+
+We'll draw on the same simulation as examples 1-3 but this time we will simulate a rare binary outcome. We do this by specifying an arbitrary cutoff, -8.5, that is close to the minimum value of Y.
+
+```{r}
+set.seed(59)
+n <- 5000
+X1 <- runif(n = n, min = -5, max = 5)
+X2 <- runif(n = n, min = -5, max = 5)
+X3 <- runif(n = n, min = -5, max = 5)
+X4 <- runif(n = n, min = -5, max = 5)
+Y <- as.numeric(6 + 0.4*X1 - 0.36*(X2^2) + 0.1*(X1>0)*(X3^3) + rnorm(n) < -8.75)
+d_binaryY <- data.frame(Y, X1, X2, X3, X4)
+
+library_ex4 <- c("SL.mean", "SL.glm", "SL.glm.interaction", "SL.bayesglm", 
+                 "SL.glmnet", "SL.gam", "SL.earth")
+set.seed(924)
+sl_fit_ex4 <- SuperLearner(
+  Y = d_binaryY[, 1], X = d_binaryY[, -1], SL.library = library_ex4, 
+  method = "method.NNloglik", family = binomial(),
+  cvControl = list(V = 20, stratifyCV = TRUE)
+)
+sl_fit_ex4
+
+set.seed(924)
+cvsl_fit_ex4 <- CV.SuperLearner(
+  Y = d_binaryY[, 1], X = d_binaryY[, -1], SL.library = library_ex4,
+  method = "method.NNloglik", family = binomial(),
+  cvControl = list(V = 20, stratifyCV = TRUE),
+  innerCvControl = list(list(V = 20, stratifyCV = TRUE))
+)
+summary(cvsl_fit_ex4)
+```
+
+### EXAMPLE 5: Super learner (SL) specification for rare binary outcome with poor cross-validation specification
+
+```{r}
+set.seed(924)
+sl_fit_ex5 <- SuperLearner(
+  Y = d_binaryY[, 1], X = d_binaryY[, -1], SL.library = library_ex4, 
+  method = "method.NNloglik", family = binomial(),
+  cvControl = list(V = 5)
+)
+sl_fit_ex5
+set.seed(924)
+cvsl_fit_ex5 <- CV.SuperLearner(
+  Y = d_binaryY[, 1], X = d_binaryY[, -1], SL.library = library_ex4,
+  method = "method.NNloglik", family = binomial(),
+  cvControl = list(V = 5),
+  innerCvControl = list(list(V = 5))
+)
+summary(cvsl_fit_ex5)
+```
+
+### EXAMPLE 6 ANALYTIC DATAET PREPROCESSING R CODE
+The file "IST dataset, corrected (csv)" was first downloaded from the database (https://datashare.ed.ac.uk/handle/10283/124) and stored in the user's "Downloads" folder.
+
+```{r}
+getwd()
+d <- read.csv("ije-2022-04-0407-File009.csv")
+```
+
+set 14-day mortality to "N" if recurrent stroke occurred after 14 days
+
+```{r}
+d$DDEAD <- as.character(d$DDEAD)
+d$DDEAD[(d$DDEAD != "N" & d$DDEADD > 14)] <- "N"
+```
+
+specify covariates and outcome and filter data to include relevant columns
+
+```{r}
+X <- c("RDELAY", "RCONSC", "SEX", "AGE", "RSLEEP", "RATRIAL", "RCT",
+       "RVISINF", "RHEP24", "RASP3", "RSBP", "RDEF1", "RDEF2",
+       "RDEF3", "RDEF4", "RDEF5", "RDEF6", "RDEF7", "RDEF8", "STYPE",
+       "RXHEP", "RXASP")
+Y <- "DDEAD"
+d <- dplyr::select(d, all_of(c(X, Y)))
+```
