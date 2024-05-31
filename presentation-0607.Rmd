@@ -1,0 +1,8 @@
+---
+title: "presentation-0607"
+author: "Seiichi Takeuchi"
+date: "2024-05-31"
+output: ioslides_presentation
+---
+
+
