@@ -8,12 +8,13 @@ install.packages("glmnet")
 install.packages("earth")
 
 # How to load SuperLearner R package (assuming it's already installed):
-library(SuperLearner) # Version: 2.0-28
+library(SuperLearner) # Version: 2.0-29
 library(tidyverse)
 library(ggplot2)
 library(arm)
 library(glmnet)
 library(earth)
+library(data.table)
 ```
 
 At the end of this file, the R session information is provided, which includes the version numbers for all packages used in this file.
@@ -171,7 +172,6 @@ summary(cvsl_fit_ex5)
 The file "IST dataset, corrected (csv)" was first downloaded from the database (https://datashare.ed.ac.uk/handle/10283/124) and stored in the user's "Downloads" folder.
 
 ```{r}
-getwd()
 d <- read.csv("ije-2022-04-0407-File009.csv")
 ```
 
@@ -191,4 +191,120 @@ X <- c("RDELAY", "RCONSC", "SEX", "AGE", "RSLEEP", "RATRIAL", "RCT",
        "RXHEP", "RXASP")
 Y <- "DDEAD"
 d <- dplyr::select(d, all_of(c(X, Y)))
+```
+
+find missing data
+```{r}
+d[d == ""] <- NA
+d[d == "NULL"] <- NA
+d[d == " "] <- NA
+d[d == "  "] <- NA
+d[d == "[]"] <- NA
+colSums(is.na(d))
+summary(d)
+```
+
+create binary indicator columns denoting missingness and impute with U
+
+```{r}
+all.equal(is.na(d$RATRIAL), is.na(d$RASP3)) # missingness pattern is the same!
+d$MISSING_RATRIAL_RASP3 <- rep(0, nrow(d))
+d$MISSING_RATRIAL_RASP3[is.na(d$RATRIAL)] <- 1
+
+d$MISSING_RHEP24 <- rep(0, nrow(d))
+d$MISSING_RHEP24[is.na(d$RHEP24)] <- 1
+d$RATRIAL[is.na(d$RATRIAL)] <- "U"
+d$RASP3[is.na(d$RASP3)] <- "U"
+d$RHEP24[is.na(d$RHEP24)] <- "U"
+```
+
+remove the observations with missing outcome (a negligible proportion)
+
+```{r}
+d <- d[!(is.na(d$DDEAD) | d$DDEAD == "U"),]
+d$DDEAD[d$DDEAD == "Y"] <- 1 # change “Y” (14-day morality occurred) to 1
+d$DDEAD[d$DDEAD == "N"] <- 0 # change “N” (14-day morality didn't occur) to 0
+write.csv(d, file = "data_example6.csv", row.names = FALSE) 
+```
+
+### EXAMPLE 7 ANALYTIC DATASET PREPROCESSING R CODE 
+
+File "Additional File 1: Data set from acupuncture headache trial (XLS 254 KB)" 
+was first downloaded from Vickers AJ. Whose data set is it anyway? Sharing 
+raw data from randomized trials. Trials. 2006 Dec;7(1):1-6. 
+https://doi.org/10.1186/1745-6215-7-15. This downloaded data was stored in 
+the user's "Downloads" folder with name "13063_2006_152_MOESM1_ESM.xls".
+
+```{r}
+d <- read_csv("13063_2006_152_MOESM1_ESM.csv")
+data.table::setDT(d)
+```
+
+define nodes in observed data
+
+- W: baseline covariates, variables measured before or at assignment of A
+
+- A: treatment, randomization to acupuncture (A = 1) or usual care (A = 0)
+
+- Delta: missingness indicator (if Y observed Delta=1 and if not Delta=0)
+
+- Y: outcome, 12-month headache score
+
+```{r}
+W <- c("age", "sex", "migraine", "chronicity", "pk1", "f1", "pf1", "rlp1",
+       "rle1", "ef1", "ewb1", "sf1", "p1", "gen1", "hc1", "painmedspk1",
+       "prophylacticdose1","prophmqs1","allmedsbaseline")
+A <- "group" # treatment, randomization to acupuncture (A = 1) or usual care (A = 0)
+Delta <- "completer" # missingness indicator (if Y observed Delta=1 and if not Delta=0)
+Y <- "pk5" # Y: outcome, 12-month headache score
+```
+
+subset data to nodes of interest
+
+```{r}
+d <- d[, c(Y, Delta, A, W), with = FALSE]
+colnames(d)[1:3] <- c("Y", "Delta", "A")
+```
+
+fix prophylacticdose1 column: it should be 0, not NA, when prophmqs1 = 0
+
+```{r}
+d$prophylacticdose1 <- ifelse(d$prophmqs1 == 0, 0, d$prophylacticdose1)
+```
+
+examine missingness of all data
+
+```{r}
+colSums(is.na(d))
+```
+
+create indicators of whether W values are missing before imputing them
+
+ef1, ewb1, sf1, gen1 and hc1 missingness in just one row, and it's the same
+
+```{r}
+d[which(is.na(d$hc1)),] 
+d$missing_ef1_ewb1_sf1_gen1_hc1 <- ifelse(is.na(d$ef1), 1, 0)
+d$missing_p1 <- ifelse(is.na(d$p1), 1, 0)
+d$missing_rle1 <- ifelse(is.na(d$rle1), 1, 0)
+d$missing_pf1 <- ifelse(is.na(d$pf1), 1, 0)
+d$missing_rlp1 <- ifelse(is.na(d$rlp1), 1, 0)
+```
+
+imputation 
+
+all W with NA are continuous, we impute with median
+
+```{r}
+imputedW <- apply(d[ , -c("Y", "Delta", "A"), with = F], 2, function(W){
+  ifelse(is.na(W), median(W, na.rm = T), W)
+})
+sum(is.na(imputedW)) == 0
+```
+
+put it all together
+
+```{r}
+d <- data.table(Y = d$Y, Delta = d$Delta, A = d$A, imputedW)
+write.csv(d, file = "data_example7.csv", row.names = FALSE)
 ```

@@ -1,0 +1,135 @@
+---
+title: "ex6-7"
+author: "Seiichi Takeuchi"
+date: "2024-06-01"
+output: html_document
+---
+
+```{r, include=FALSE}
+install.packages("devtools")
+library(devtools)
+remotes::install_github("tlverse/sl3")
+install.packages("origami")
+install.packages("polspline")
+install.packages("dbarts")
+install.packages("hal9001")
+
+library(SuperLearner) # Version: 2.0-29
+library(tidyverse)
+library(ggplot2)
+library(arm)
+library(glmnet)
+library(earth)
+library(data.table)
+library(origami)
+library(sl3)
+library(polspline)
+library(dbarts)
+library(hal9001)
+```
+
+### EXAMPLE 6
+
+Super learner (SL) specification for larger n, risk prediction application
+
+load analytic dataset
+
+```{r}
+# (note we are loading the pre-processed data)
+d <- read.csv("data_example6.csv")
+# make analytic dataset a data.table object
+data.table::setDT(d) 
+```
+
+```{r}
+# specify outcome (Y) and covariates (X) using column names in the data
+outcome <- "DDEAD"
+covariates <- c("RDELAY", "RCONSC", "SEX", "AGE", "RSLEEP", "RATRIAL", "RCT", 
+                "RVISINF", "RHEP24", "RASP3", "RSBP", "RDEF1", "RDEF2", "RDEF3", 
+                "RDEF4", "RDEF5", "RDEF6", "RDEF7", "RDEF8", "STYPE", "RXHEP", 
+                "RXASP", "MISSING_RATRIAL_RASP3", "MISSING_RHEP24")
+```
+
+#### SL specification
+
+specify performance metric for discrete SL, NNL
+
+```{r}
+dSL_metalearner <- Lrnr_cv_selector$new(eval_function = loss_loglik_binomial)
+```
+
+#### define stratified V-fold CV scheme
+
+```{r}
+ex6_folds <- origami::make_folds(
+  n = nrow(d), fold_fun = folds_vfold, V = 5, strata_ids = d$DDEAD
+)
+# now we can define the prediction task
+ex6_task <- make_sl3_Task(
+  data = d, covariates = covariates, outcome = outcome, folds = ex6_folds
+)
+```
+
+#### specify library 
+
+```{r}
+ex6_candidates <- c(
+  "GLM" = Lrnr_glm$new(),
+  "BayesGLM" = Lrnr_bayesglm$new(),
+  "GAM" = Lrnr_gam$new(),
+  "Lasso" = Lrnr_glmnet$new(alpha = 1),
+  "Enet.5" = Lrnr_glmnet$new(alpha = 0.5),
+  "Ridge" = Lrnr_glmnet$new(alpha = 0),
+  "PolyMARS" = Lrnr_polspline$new(),
+  "MARS" = Lrnr_earth$new(),
+  "RF" = Lrnr_ranger$new(),
+  "XGBoost_autotune" = Lrnr_caret$new(method = "xgbTree", metric = "log-likeli"),
+  "BART" = Lrnr_dbarts$new(ndpost = 1000, verbose = FALSE),
+  "HAL" = Lrnr_hal9001$new(max_degree = 2, num_knots = 3)
+)
+```
+
+using ex3_candidates, make an ensemble SL and then include the eSL in the lib
+
+we will use Lrnr_sl default meta-learner for continuous Y, NNLS regression
+
+```{r}
+ex6_candidates_stack <- make_learner(Stack, ex6_candidates)
+ex6_eSL <- Lrnr_sl$new(learners = ex6_candidates_stack)
+ex6_candidates_augmented <- c(ex6_candidates, "eSL" = ex6_eSL)
+ex6_candidates_augmented_stack <- make_learner(Stack, ex6_candidates_augmented)
+```
+
+use the discrete SL (dSL) to select the best-performing candidate
+
+```{r}
+ex6_dSL <- Lrnr_sl$new(
+  learners = ex6_candidates_augmented_stack, metalearner = dSL_metalearner
+)
+```
+
+#### fit
+
+```{r}
+start_timer_ex6 <- proc.time() # set a timer
+set.seed(7491)
+ex6_dSL_fit <- ex6_dSL$train(task = ex6_task)
+end_timer_ex6 <-  proc.time() - start_timer_ex6
+```
+
+############################### results ########################################
+
+####### get predictions (call $predict() on the fitted learner)
+# - to get predictions with *new* data, a new sl3 task containing the new data 
+#   needs to be created and then passed into predict
+# - we can get predictions for the data in ex3_task, as shown below
+ex6_dSL_predictions <- ex6_dSL_fit$predict(task = ex6_task) 
+
+####### get table of the CV predictive performance for each candidate
+cv_risk_ex6 <- ex6_dSL_fit$cv_risk(loss_loglik_binomial)
+
+####### let's take a look at the eSL coefficients, how did it combine the learners?
+ex6_dSL_fit$learner_fits$eSL$coefficients
+
+###### save
+save(ex6_dSL_fit, file = "~/example6_fit.Rdata", compress = TRUE)
