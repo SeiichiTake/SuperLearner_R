@@ -13,6 +13,7 @@ install.packages("origami")
 install.packages("polspline")
 install.packages("dbarts")
 install.packages("hal9001")
+install.packages("ranger")
 
 library(SuperLearner) # Version: 2.0-29
 library(tidyverse)
@@ -26,6 +27,7 @@ library(sl3)
 library(polspline)
 library(dbarts)
 library(hal9001)
+library(ranger)
 ```
 
 ### EXAMPLE 6
@@ -44,9 +46,9 @@ data.table::setDT(d)
 ```{r}
 # specify outcome (Y) and covariates (X) using column names in the data
 outcome <- "DDEAD"
-covariates <- c("RDELAY", "RCONSC", "SEX", "AGE", "RSLEEP", "RATRIAL", "RCT", 
-                "RVISINF", "RHEP24", "RASP3", "RSBP", "RDEF1", "RDEF2", "RDEF3", 
-                "RDEF4", "RDEF5", "RDEF6", "RDEF7", "RDEF8", "STYPE", "RXHEP", 
+covariates <- c("RDELAY", "RCONSC", "SEX", "AGE", "RSLEEP", "RATRIAL", "RCT",
+                "RVISINF", "RHEP24", "RASP3", "RSBP", "RDEF1", "RDEF2", "RDEF3",
+                "RDEF4", "RDEF5", "RDEF6", "RDEF7", "RDEF8", "STYPE", "RXHEP",
                 "RXASP", "MISSING_RATRIAL_RASP3", "MISSING_RHEP24")
 ```
 
@@ -117,19 +119,32 @@ ex6_dSL_fit <- ex6_dSL$train(task = ex6_task)
 end_timer_ex6 <-  proc.time() - start_timer_ex6
 ```
 
-############################### results ########################################
+#### results
 
-####### get predictions (call $predict() on the fitted learner)
-# - to get predictions with *new* data, a new sl3 task containing the new data 
-#   needs to be created and then passed into predict
-# - we can get predictions for the data in ex3_task, as shown below
-ex6_dSL_predictions <- ex6_dSL_fit$predict(task = ex6_task) 
+get predictions (call $predict() on the fitted learner)
 
-####### get table of the CV predictive performance for each candidate
+- to get predictions with *new* data, a new sl3 task containing the new data needs to be created and then passed into predict
+
+- we can get predictions for the data in ex3_task, as shown below
+
+```{r}
+ex6_dSL_predictions <- ex6_dSL_fit$predict(task = ex6_task)
+```
+
+get table of the CV predictive performance for each candidate
+
+```{r}
 cv_risk_ex6 <- ex6_dSL_fit$cv_risk(loss_loglik_binomial)
+```
 
-####### let's take a look at the eSL coefficients, how did it combine the learners?
+let's take a look at the eSL coefficients, how did it combine the learners?
+
+```{r}
 ex6_dSL_fit$learner_fits$eSL$coefficients
+```
 
-###### save
-save(ex6_dSL_fit, file = "~/example6_fit.Rdata", compress = TRUE)
+#### save
+
+```{r}
+save(ex6_dSL_fit, file = "example6_fit.Rdata", compress = TRUE)
+```
